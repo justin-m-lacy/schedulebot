@@ -12,9 +12,18 @@ exports.readJSON = path => new Promise( (res,rej)=>{
 
 });
 
+exports.mkdir = path => new Promise( (res,rej)=> {
+
+	fs.mkdir( path, function( err ) {
+		if ( err ) rej(err);
+		res();
+	});
+
+});
+
 exports.writeJSON = (path,data) => new Promise( (res, rej)=>{
 
-	fs.writeFile( path, JSON.stringify(data), (err)=>{
+	fs.writeFile( path, JSON.stringify(data), {flag:'w+'}, (err)=>{
 
 		if ( err ) rej(err);
 		res();

@@ -5,6 +5,8 @@ var Cmd = require( './commands.js');
 var Dates = require( './datedisplay.js' );
 var Dice = require( './dice.js' );
 
+var objutils = require( './objutils.js' );
+const fsj = require( './fjson.js');
 const fs = require( 'fs' );
 const path = require( 'path' );
 
@@ -148,7 +150,7 @@ function cmdTest( msg, reply ){
 	msg.channel.send( reply + ' yourself, ' + msg.member.displayName );
 }
 
-function sendGameTime( channel, displayName, gameName ) {
+async function sendGameTime( channel, displayName, gameName ) {
 	
 	let gMember = findMember( channel.guild, displayName );
 	if ( gMember == null ) {
@@ -161,28 +163,38 @@ function sendGameTime( channel, displayName, gameName ) {
 		return;
 	}
 
-	readMemberData( gMember, (err,data)=>{
+	try {
 
-		if ( err == null && data.hasOwnProperty( 'games') ) {
+		let data = await readMemberData( gMember );
+		let games = data.games;
 
-			let games = data.games;
-			if ( games.hasOwnProperty(gameName ) ) {
-				let dateStr = Dates.DateDisplay.recent( games[gameName] );
-				channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
-				return;
-			}
+		let dateStr = Dates.DateDisplay.recent( games[gameName] );
+		channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
 
-		}
+	} catch ( err ) {
 		channel.send( gameName + ': No record for ' + displayName + ' found.' );
-		
-	});
+	}
+
+}
+
+function cmdOffTime( chan, name ) {
+
+	let gMember = findMember( channel.guild, displayName );
+	if ( gMember == null ) {
+		channel.send( 'User ' + displayName + ' not found.' );
+		return;
+	}
+	if ( !hasStatus(gMember, 'offline') ) {
+		chan.send( name + ' is not offline.' );
+		return;
+	}
 
 }
 
 // send status history of user to channel.
 // statuses is a single status string or array of valid statuses
 // statusName is the status to display in channel.
-function sendHistory( channel, displayName, statuses, statusName ) {
+async function sendHistory( channel, displayName, statuses, statusName ) {
 
 	let gMember = findMember( channel.guild, displayName );
 	if ( gMember == null ) {
@@ -190,39 +202,29 @@ function sendHistory( channel, displayName, statuses, statusName ) {
 		return;
 	}
 
-	if ( hasCurrentStatus(gMember, statuses ) ) {
+	if ( hasStatus(gMember, statuses ) ) {
 
 		channel.send( displayName + ' is now ' + statusName );
 		return;
 
 	}
 
-	readMemberData( gMember, (err,data)=> {
+	try {
 
-		if ( err != null || !data.hasOwnProperty( 'history' ) ) {
-			channel.send( 'The requested information could not be found.' );
-			return;
-		}
+		let memData = await readMemberData( gMember );
+		let lastTime = getHistory( memData.history, statuses );
 
-		let lastTime = getHistory( data.history, statuses );
+		let dateStr = Dates.DateDisplay.recent( lastTime );
+		if ( statusName == null ) statusName = evtType;
+		channel.send( 'Last saw ' + displayName + ' ' + statusName + ' ' + dateStr );
 
-		if ( isNaN(lastTime) ) {
-
-			channel.send( 'I have no record of ' + display + ' being ' + statusName );
-
-		} else {
-
-			let dateStr = Dates.DateDisplay.recent( lastTime );
-			if ( statusName == null ) { statusName = evtType; }
-			channel.send( 'Last saw ' + displayName + ' ' + statusName + ' ' + dateStr );
-		}
-		
-	
-	});
+	} catch ( err ) {
+		channel.send( 'I have no record of ' + display + ' being ' + statusName );
+	}
 
 }
 
-function hasCurrentStatus( gMember, statuses ) {
+function hasStatus( gMember, statuses ) {
 
 	let status = gMember.presence.status;
 	if ( statuses instanceof Array ) {
@@ -267,7 +269,7 @@ function getHistory( history, statuses ) {
 }
 
 // send schedule message to channel, for user with displayName
-function sendSchedule( channel, displayName, activity ) {
+async function sendSchedule( channel, displayName, activity ) {
 
 	let gMember = findMember( channel.guild, displayName );
 	if ( gMember == null ) {
@@ -275,66 +277,45 @@ function sendSchedule( channel, displayName, activity ) {
 		return;
 	}
 
-	readSchedule( gMember, activity, (sched)=>{
-
-		if ( sched ) {
-			channel.send( displayName + ' ' + activity + ': ' + sched );
-		} else {
-			channel.send( 'No ' + activity + ' schedule found for ' +  displayName + '.' );
-		}
-
-	});
+	let sched = await readSchedule( gMember, activity );
+	if ( sched ) {
+		channel.send( displayName + ' ' + activity + ': ' + sched );
+	} else {
+		channel.send( 'No ' + activity + ' schedule found for ' +  displayName + '.' );
+	}
 
 }
 
 // guild member to find schedule for.
 // type of schedule being checked.
 // cb( scheduleString ) - string is null or empty on error
-function readSchedule( gMember, scheduleType, cb ) {
+async function readSchedule( gMember, schedType ) {
 
-	readMemberData( gMember, (err,data) => {
+	try {
 
-		if ( err == null ) {
-
-			try {
-
-				console.log( "DATA LOADED: " + JSON.stringify(data) );
-				if ( data != null && data.hasOwnProperty('schedule') && cb != null ) {
-					cb( data.schedule[scheduleType] );
-					return;
-				}
-
-			} catch( exp ) {
-				console.log( exp );
-			}
-
+		let data = await readMemberData( gMember );
+		if ( data != null && data.hasOwnProperty('schedule') ) {
+			return data.schedule[schedType];
 		}
 
-		if ( cb != null ) {
-			cb( null );
-		}
-
-
-	});
+	} catch ( err ){
+		console.log( err );
+		return null;
+	}
 
 }
 
 /// sets the schedule of a given guild member, for a given schedule type.
-function setSchedule( gMember, scheduleType, scheduleString ) {
+async function setSchedule( gMember, scheduleType, scheduleString ) {
 
-	readMemberData( gMember, (err,data)=> {
+	try {
 
 		let newData = { schedule: { [scheduleType]:scheduleString } };
-		if ( err == null ) {
-			console.log( 'old file data loaded' );
-			mergeRecursive( newData, data );
-			writeMemberData( gMember, data );
-		} else {
-			console.log( 'error reading file data' );
-			writeMemberData( gMember, newData );
-		}
+		await mergeMember( gMember, newData );
 
-	});
+	} catch ( err ) {
+		console.log( 'could not set schedule.');
+	}
 
 }
 
@@ -377,47 +358,23 @@ function presenceChanged( oldMember, newMember ) {
 
 function logGame( guildMember, game ) {
 
-	readMemberData( guildMember, (err,data)=> {
-
-		let gameName = game.name;
-		let newData = { games:{
-				[gameName]:Date.now()
-			}
-		};
-
-		if ( err == null ) {
-
-			mergeRecursive( newData, data );
-			writeMemberData( guildMember, data );
-
-		} else {
-			writeMemberData( guildMember, newData );
+	let gameName = game.name;
+	let newData = { games:{
+			[game.name]:Date.now()
 		}
-
-	});
+	};
+	mergeMember( guildMember, newData );
 
 }
 
 // Log a guild member's last status within the guild.
 function logStatus( guildMember, theStatus ) {
 
-	readMemberData( guildMember, (err,data)=> {
-
-		let newData = { history:{
-			[theStatus]:Date.now()
-			}
-		};
-
-		if ( err == null ) {
-
-			mergeRecursive( newData, data );
-			writeMemberData( guildMember, data );
-
-		} else {
-			writeMemberData( guildMember, newData );
+	let newData = { history:{
+		[theStatus]:Date.now()
 		}
-
-	});
+	};
+	mergeMember( guildMember, newData );
 
 }
 
@@ -427,129 +384,67 @@ function findMember( hasMembers, displayName ) {
 	return hasMembers.members.find( 'displayName', displayName );
 }
 
+// merge with existing member data.
+async function mergeMember( guildMember, newData ){
+
+	try {
+
+		let data = await readMemberData( guildMember );
+		objutils.recurMerge( newData, data );
+	
+		newData = data;
+
+	} catch ( err ){
+
+		console.log( err );
+		console.log( 'No cur data for ' + guildMember.displayName );
+
+	} finally {
+
+		try {
+			await writeMemberData( guildMember, newData );
+		} catch(err){}
+
+	}
+
+}
+
 // Attempts to read the json member file for a guild member.
 // cb(err,data) on complete. data is null on error.
-function readMemberData( guildMember, cb ) {
+async function readMemberData( guildMember ) {
 
 	let filePath = getMemberPath( guildMember );
-	fs.readFile( filePath, (err,data)=>{
-
-		if ( err == null ) {
-
-			try {
-				let objData = JSON.parse(data);
-				if ( cb != null ) {
-					cb(null, objData);
-				}
-
-			} catch ( exp ) {
-				console.log( exp );
-				if ( cb != null ) {
-					cb(exp,null);
-				}
-			}
-			return;
-
-		}
-		console.log( 'read err: ' + err );
-		if ( cb != null ) {
-			cb(err,null);
-		}
-
-	});
+	return await fsj.readJSON( filePath );
 
 }
 
 // write guildMember data file to guild folder.
 // cb(err) callback.
-function writeMemberData( guildMember, jsonData, cb ) {
+async function writeMemberData( guildMember, jsonData ) {
 
 	let filePath = getMemberPath( guildMember );
-	fs.writeFile( filePath, JSON.stringify( jsonData ), {flag:'w+'}, (err)=>{
 
-		if ( err != null ) {
-			console.log( 'error writing file: ' + err );
-		}
-		if ( cb != null ) {
-			cb(err);
-		}
-
-	});
+	try {
+		await fsj.mkdir( getGuildDir( guildMember.guild ) );
+	} catch ( err ){}
+	await fsj.writeJSON( filePath, jsonData );
 
 }
 
-function writeJsonData( filePath, jsonData ) {
-
-	fs.writeFile( filePath, JSON.stringify( jsonData ),
-		(err)=>{
-
-		if ( err != null ) {
-			console.log( 'error writing file: ' + filePath );
-		}
-
-	} );
-
+// path to guild storage.
+function getGuildDir( guild ) {
+	if ( guild == null ) return ServersDir;
+	return path.join( ServersDir, guild.id );
 }
 
 // Return the string path to the guild member's file for that guild.
 function getMemberPath( guildMember ) {
 
-	if ( guildMember == null ) { return '';}
-	if ( guildMember.guild == null ) { return '';}
+	if ( guildMember == null ) return '';
+	if ( guildMember.guild == null ) return '';
 
-	let guild = guildMember.guild.id;
+	let gid = guildMember.guild.id;
 
-	ensureDir( guild );
-
-	return path.join( ServersDir, guild, (guildMember.id) + '.json' );
-
-}
-
-// Ensure a directory exists, creating it if it does not.
-function ensureDir( dirPath, cb ) {
-	
-	fs.mkdir( dirPath, function( err ){
-		if ( cb != null ) {
-			cb();
-		}
-	});
-
-}
-
-// Performs a recursive merge of variables from src to dest.
-// Variables from src override variables in dest.
-function mergeRecursive( src, dest ) {
-
-	for( var key in src ) {
-
-		if ( !src.hasOwnProperty(key) ) {
-			continue;
-		}
-
-		var newVal = src[key];
-		var oldVal = dest[key];
-		if ( oldVal != null && oldVal instanceof Object && newVal instanceof Object ) {
-
-			mergeRecursive( newVal, oldVal );
-
-		} else {
-			dest[key] = newVal;
-		}
-
-	}
-
-}
-
-// merges all variables of src into dest.
-// values from src overwrite dest.
-function objectMerge( src, dest ) {
-
-	for( var key in src ) {
-
-		if ( src.hasOwnProperty( key ) ) {
-			dest[key] = src[key];
-		}
-
-	}
+	return path.join( ServersDir, gid, (guildMember.id) + '.json' );
 
 }
