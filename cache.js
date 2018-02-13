@@ -1,9 +1,12 @@
 exports.Cache = class {
 
-	constructor( max_entries, resolver, backup ) {
+	// loader fallback loads with (key)
+	// saver stores with (key,value)
+	constructor( max_entries, loader, saver ) {
 
 		this.max_size = max_entries;
-		this.resolver = resolver;
+		this.loader = loader;
+		this.saver = saver;
 
 		this.dict = {};
 
@@ -12,17 +15,27 @@ exports.Cache = class {
 	async get( key ) {
 
 		if ( this.dict.hasOwnProperty(key)){
+			console.log( 'retrieving from cache.');
 			return this.dict[key];
 		}
-		return await resolver(key);
+		if ( !this.loader ) return null;
+
+		console.log( 'fetching from file.');
+		let val = await this.loader( key );
+		if ( val != null ) {
+			console.log( 'caching loaded value.');
+			this.dict[key] = val;
+		}
+		return val;
 
 	}
 
 	async store( key, value ) {
 
 		this.dict[key] = value;
-		if ( backup ) {
-			await backup( key, value );
+		if ( this.saver ) {
+			console.log('writing to backup');
+			await this.saver( key, value );
 		}
 
 	}

@@ -1,22 +1,26 @@
 var Discord = require( 'discord.js');
 var auth = require('./auth.json');
+var fsys = require( './botfs.js');
 
-const React = require( './reactions.js');
 const Cmd = require( './commands.js');
 const dformat = require( './datedisplay.js' );
 const Dice = require( './dice.js' );
 const objutils = require( './objutils.js' );
-const fsj = require( './fjson.js');
-const cache = require ( './cache.js' );
 
-const fs = require( 'fs' );
-const path = require( 'path' );
-
-const ServersDir = './servers/'
 const CmdPrefix = '!';
+
+function initCache() {
+
+	var cacher = require ( './cache.js' );
+
+	let cache = new cacher.Cache( 250, fsys.readData, fsys.writeData );
+	return cache;
+
+}
 
 function initReactions() {
 
+	let React = require( './reactions.js');
 	let reactData = require('./reactions.json');
 	return new React.Reactions( reactData );
 }
@@ -53,6 +57,7 @@ var bot = new Discord.Client( {} );
 
 var reactions = initReactions();
 var dispatch = initCmds();
+var cache = initCache();
 
 bot.on( 'ready', function(evt) {
     console.log('Scheduler Connected: ' + bot.username + ' - (' + bot.id + ')');
@@ -196,7 +201,7 @@ async function sendGameTime( channel, displayName, gameName ) {
 
 	try {
 
-		let data = await readMemberData( gMember );
+		let data = await fetchMemberData( gMember );
 		let games = data.games;
 
 		let dateStr = dformat.DateDisplay.recent( games[gameName] );
@@ -291,7 +296,7 @@ async function sendHistory( channel, displayName, statuses, statusName ) {
 
 	try {
 
-		let memData = await readMemberData( gMember );
+		let memData = await fetchMemberData( gMember );
 		let lastTime = latestStatus( memData.history, statuses );
 
 		let dateStr = dformat.DateDisplay.recent( lastTime );
@@ -351,11 +356,8 @@ function latestStatus( history, statuses ) {
 // send schedule message to channel, for user with displayName
 async function sendSchedule( channel, displayName, activity ) {
 
-	let gMember = findMember( channel, displayName );
-	if ( gMember == null ) {
-		channel.send( 'User ' + displayName + ' not found.' );
-		return;
-	}
+	let gMember = tryGetUser( channel, displayName );
+	if ( !gMember ) return;
 
 	let sched = await readSchedule( gMember, activity );
 	if ( sched ) {
@@ -369,7 +371,7 @@ async function sendSchedule( channel, displayName, activity ) {
 // return members history object.
 async function readHistory( gMember ){
 
-	let data = await readMemberData( gMember );
+	let data = await fetchMemberData( gMember );
 	if ( data != null && data.hasOwnProperty('history')) return data.history;
 	return null;
 
@@ -382,7 +384,7 @@ async function readSchedule( gMember, schedType ) {
 
 	try {
 
-		let data = await readMemberData( gMember );
+		let data = await fetchMemberData( gMember );
 		if ( data != null && data.hasOwnProperty('schedule') ) {
 			return data.schedule[schedType];
 		}
@@ -508,7 +510,7 @@ async function mergeMember( guildMember, newData ){
 
 	try {
 
-		let data = await readMemberData( guildMember );
+		let data = await fetchMemberData( guildMember );
 		objutils.recurMerge( newData, data );
 	
 		newData = data;
@@ -521,47 +523,23 @@ async function mergeMember( guildMember, newData ){
 	} finally {
 
 		try {
-			await writeMemberData( guildMember, newData );
+			await storeMemberData( guildMember, newData );
 		} catch(err){}
 
 	}
 
 }
 
-// Read the json file for a guild member.
-async function readMemberData( guildMember ) {
+async function fetchMemberData( gMember ) {
 
-	let filePath = getMemberPath( guildMember );
-	return await fsj.readJSON( filePath );
-
-}
-
-// write guildMember data file to guild folder.
-async function writeMemberData( guildMember, jsonData ) {
-
-	let filePath = getMemberPath( guildMember );
-
-	try {
-		await fsj.mkdir( getGuildDir( guildMember.guild ) );
-	} catch ( err ){}
-	await fsj.writeJSON( filePath, jsonData );
+	let memPath = fsys.memberPath( gMember );
+	return await cache.get( memPath );
 
 }
 
-// path to guild storage.
-function getGuildDir( guild ) {
-	if ( guild == null ) return ServersDir;
-	return path.join( ServersDir, guild.id );
-}
+async function storeMemberData( gMember, data ) {
 
-// Return the string path to the guild member's file for that guild.
-function getMemberPath( guildMember ) {
-
-	if ( guildMember == null ) return '';
-	if ( guildMember.guild == null ) return '';
-
-	let gid = guildMember.guild.id;
-
-	return path.join( ServersDir, gid, (guildMember.id) + '.json' );
+	let memPath = fsys.memberPath( gMember );
+	await cache.store( memPath, data );
 
 }
