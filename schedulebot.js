@@ -2,9 +2,13 @@ var Discord = require( 'discord.js');
 var auth = require('./auth.json');
 var React = require( './reactions.js');
 var Cmd = require( './commands.js');
+var Dates = require( './datedisplay.js' );
+var Dice = require( './dice.js' );
 
 const fs = require( 'fs' );
 const path = require( 'path' );
+
+const ServersDir = './servers/'
 const CmdPrefix = '!';
 
 function initReactions() {
@@ -53,8 +57,7 @@ process.on( 'SIGINT', onShutdown );
 
 
 function doError( err ) {
-	console.log( 'Error connecting: ' + err.message );
-	onShutdown();
+	console.log( 'Connection error: ' + err.message );
 }
 
 function onShutdown() {
@@ -105,29 +108,7 @@ function doCommand( msg ) {
 
 function cmdRoll( msg, dice ) {
 
-	let ind = dice.indexOf( 'd' );
-	let num, sides;
-
-	if ( ind < 0 ) {
-
-		num = 1;
-		sides = parseInt(dice);
-
-	} else {
-
-		num = parseInt( dice.slice(0,ind) );
-		if ( isNaN(num)) num = 1;
-		sides = parseInt( dice.slice( ind+1 ) );
-
-	}
-
-	if ( isNaN(sides)) sides = 6;
-
-	let total = 0;
-	while ( num-- > 0 ) {
-		total += Math.floor( sides*Math.random() ) + 1;
-	}
-
+	let total = Dice.Roller.roll( dice );
 	msg.channel.send( msg.member.displayName + ' rolled ' + total );
 
 }
@@ -186,8 +167,8 @@ function sendGameTime( channel, displayName, gameName ) {
 
 			let games = data.games;
 			if ( games.hasOwnProperty(gameName ) ) {
-				let date = new Date( games[gameName] );
-				channel.send( displayName + ' last played ' + gameName + ' on ' + date.toLocaleString() );
+				let dateStr = Dates.DateDisplay.recent( games[gameName] );
+				channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
 				return;
 			}
 
@@ -231,9 +212,9 @@ function sendHistory( channel, displayName, statuses, statusName ) {
 
 		} else {
 
-			let date = new Date( lastTime );
+			let dateStr = Dates.DateDisplay.recent( lastTime );
 			if ( statusName == null ) { statusName = evtType; }
-			channel.send( 'Last saw ' + displayName + ' ' + statusName + ' on ' + date.toLocaleString() );
+			channel.send( 'Last saw ' + displayName + ' ' + statusName + ' ' + dateStr );
 		}
 		
 	
@@ -311,7 +292,7 @@ function sendSchedule( channel, displayName, activity ) {
 // cb( scheduleString ) - string is null or empty on error
 function readSchedule( gMember, scheduleType, cb ) {
 
-	readMemberData( gMember, (err,data)=> {
+	readMemberData( gMember, (err,data) => {
 
 		if ( err == null ) {
 
@@ -378,8 +359,8 @@ function presenceChanged( oldMember, newMember ) {
 
 	let oldGame = oldMember.presence.game;
 	let newGame = newMember.presence.game;
-	let oldGameName = oldGame == null ? null : oldGame.name;
-	let newGameName = newGame == null ? null : newGame.name;
+	let oldGameName = oldGame ? oldGame.name : null;
+	let newGameName = newGame ? newGame.name : null;
 
 	if ( oldGameName != newGameName ){
 
@@ -520,7 +501,7 @@ function getMemberPath( guildMember ) {
 
 	ensureDir( guild );
 
-	return path.join( guild, (guildMember.id) + '.json' );
+	return path.join( ServersDir, guild, (guildMember.id) + '.json' );
 
 }
 
