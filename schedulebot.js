@@ -2,7 +2,7 @@ var Discord = require( 'discord.js');
 var auth = require('./auth.json');
 var React = require( './reactions.js');
 var Cmd = require( './commands.js');
-var Dates = require( './datedisplay.js' );
+var dformat = require( './datedisplay.js' );
 var Dice = require( './dice.js' );
 
 var objutils = require( './objutils.js' );
@@ -27,10 +27,14 @@ function initCmds(){
 	cmds.add( 'sleep', cmdSleep, 1, 1, '!sleep [sleep schedule]');
 	cmds.add( 'when', cmdWhen, 2, 2, '!when [userName] [activity]');
 	cmds.add( 'roll', cmdRoll, 1,1, '!roll [n]d[s]');
+
 	cmds.add( 'lastplay', cmdLastPlay, 2, 2, '!lastplay [userName] [gameName]');
 	cmds.add( 'laston', cmdLastOn, 1, 1, '!laston [userName]');
 	cmds.add( 'lastactive', cmdLastActive, 1, 1, '!lastactive [userName]');
 	cmds.add( 'lastoff', cmdLastOff, 1, 1, '!lastoff [userName]');
+
+	cmds.add( 'offtime', cmdOffTime, 1,1, '!offtime [userName]');
+	cmds.add( 'ontime', cmdOnTime, 1,1, '!ontime [username]');
 
 	cmds.add( 'test', cmdTest, 1, 1, '!test [ping message]');
 
@@ -168,7 +172,7 @@ async function sendGameTime( channel, displayName, gameName ) {
 		let data = await readMemberData( gMember );
 		let games = data.games;
 
-		let dateStr = Dates.DateDisplay.recent( games[gameName] );
+		let dateStr = dformat.DateDisplay.recent( games[gameName] );
 		channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
 
 	} catch ( err ) {
@@ -177,16 +181,72 @@ async function sendGameTime( channel, displayName, gameName ) {
 
 }
 
-function cmdOffTime( chan, name ) {
+async function cmdOnTime( msg, name ) {
 
-	let gMember = findMember( channel.guild, displayName );
+	let chan = msg.channel;
+	let gMember = findMember( chan.guild, name );
 	if ( gMember == null ) {
-		channel.send( 'User ' + displayName + ' not found.' );
+		chan.send( 'User ' + name + ' not found.' );
+		return;
+	}
+	if ( hasStatus(gMember, 'offline') ) {
+		chan.send( name + ' is not online.' );
+		return;
+	}
+
+	try {
+
+		let history = await readHistory(gMember);
+		if ( history != null ) {
+
+			let lastTime = latestStatus( history, 'offline' );
+
+			if ( lastTime != null ){
+				chan.send( name + ' has been online for ' + dformat.DateDisplay.elapsed( lastTime ) );
+				return;
+			}
+
+		}
+		chan.send( 'No online record for ' + name );
+
+	} catch ( err ){
+		chan.send( 'No online record for ' + name );
+		console.log( err );
+	}
+
+}
+
+async function cmdOffTime( msg, name ) {
+
+	let chan = msg.channel;
+	let gMember = findMember( chan.guild, name );
+	if ( gMember == null ) {
+		chan.send( 'User ' + name + ' not found.' );
 		return;
 	}
 	if ( !hasStatus(gMember, 'offline') ) {
 		chan.send( name + ' is not offline.' );
 		return;
+	}
+
+	try {
+
+		let history = await readHistory(gMember);
+		if ( history != null ) {
+
+			let lastTime = latestStatus( history, 'offline' );
+
+			if ( lastTime != null ){
+				chan.send( name + ' has been offline for ' + dformat.DateDisplay.elapsed( lastTime ) );
+				return;
+			}
+
+		}
+		chan.send( 'No offline record for ' + name );
+
+	} catch ( err ){
+		chan.send( 'No offline record for ' + name );
+		console.log( err );
 	}
 
 }
@@ -212,9 +272,9 @@ async function sendHistory( channel, displayName, statuses, statusName ) {
 	try {
 
 		let memData = await readMemberData( gMember );
-		let lastTime = getHistory( memData.history, statuses );
+		let lastTime = latestStatus( memData.history, statuses );
 
-		let dateStr = Dates.DateDisplay.recent( lastTime );
+		let dateStr = dformat.DateDisplay.recent( lastTime );
 		if ( statusName == null ) statusName = evtType;
 		channel.send( 'Last saw ' + displayName + ' ' + statusName + ' ' + dateStr );
 
@@ -242,7 +302,7 @@ function hasStatus( gMember, statuses ) {
 
 // checks json history object for last time in a given status
 // or in an array of statuses.
-function getHistory( history, statuses ) {
+function latestStatus( history, statuses ) {
 
 	if ( statuses instanceof Array ) {
 
@@ -286,6 +346,15 @@ async function sendSchedule( channel, displayName, activity ) {
 
 }
 
+// return members history object.
+async function readHistory( gMember ){
+
+	let data = await readMemberData( gMember );
+	if ( data != null && data.hasOwnProperty('history')) return data.history;
+	return null;
+
+}
+
 // guild member to find schedule for.
 // type of schedule being checked.
 // cb( scheduleString ) - string is null or empty on error
@@ -297,6 +366,7 @@ async function readSchedule( gMember, schedType ) {
 		if ( data != null && data.hasOwnProperty('schedule') ) {
 			return data.schedule[schedType];
 		}
+		return null;
 
 	} catch ( err ){
 		console.log( err );
@@ -332,9 +402,8 @@ function presenceChanged( oldMember, newMember ) {
 	if ( newStatus != oldStatus ) {
 
 		/// statuses: 'offline', 'online', 'idle', 'dnd'
-		logStatus( oldMember, oldStatus );
+		logHistory( oldMember, [oldStatus, newStatus] );
 		console.log( newMember.displayName + ' status changed: ' + newStatus );
-		//oldMember.guild.systemChannel.send( oldMember.displayName + ' status changed: ' + newStatus );
 
 	}
 
@@ -368,13 +437,15 @@ function logGame( guildMember, game ) {
 }
 
 // Log a guild member's last status within the guild.
-function logStatus( guildMember, theStatus ) {
+function logHistory( guildMember, statuses ) {
 
-	let newData = { history:{
-		[theStatus]:Date.now()
-		}
-	};
-	mergeMember( guildMember, newData );
+	let now = Date.now();
+	let history = {};
+	for( var i = statuses.length-1; i >= 0; i-- ) {
+		history[ statuses[i] ] = now;
+	}
+
+	mergeMember( guildMember, { history:history } );
 
 }
 

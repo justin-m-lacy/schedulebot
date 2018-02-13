@@ -1,7 +1,16 @@
-const mil_per_day = 1000*3600*24;
-const mil_per_hour = 1000*3600;
+const ms_per_day = 1000*3600*24;
+const ms_per_hr = 1000*3600;
+const ms_per_min = 60*1000;
 
 exports.DateDisplay = class {
+
+	static elapsed( since ) {
+
+		let dt = Date.now() - since;
+		if ( dt < ms_per_hr ) return ( (dt/ms_per_min) + ' minutes');
+		return ( dt / ms_per_hr) + ' hours';
+
+	}
 
 	static recent( time ) {
 
@@ -22,17 +31,17 @@ exports.DateDisplay = class {
 
 	// elapsed time less than day
 	static inDay( dt ) {
-		return Math.abs(dt) < mil_per_day;
+		return Math.abs(dt) < ms_per_day;
 	}
 
 	// elapsed less than week
 	static inWeek( dt ) {
-		return Math.abs(dt) < 7*mil_per_day;
+		return Math.abs(dt) < 7*ms_per_day;
 	}
 
 	// elapsed less than month.
 	static inMonth( dt ) {
-		return Math.abs(dt) < 31*mil_per_day;
+		return Math.abs(dt) < 31*ms_per_day;
 	}
 
 
