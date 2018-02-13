@@ -1,12 +1,14 @@
 var Discord = require( 'discord.js');
 var auth = require('./auth.json');
-var React = require( './reactions.js');
-var Cmd = require( './commands.js');
-var dformat = require( './datedisplay.js' );
-var Dice = require( './dice.js' );
 
-var objutils = require( './objutils.js' );
+const React = require( './reactions.js');
+const Cmd = require( './commands.js');
+const dformat = require( './datedisplay.js' );
+const Dice = require( './dice.js' );
+const objutils = require( './objutils.js' );
 const fsj = require( './fjson.js');
+const cache = require ( './cache.js' );
+
 const fs = require( 'fs' );
 const path = require( 'path' );
 
@@ -28,6 +30,10 @@ function initCmds(){
 	cmds.add( 'when', cmdWhen, 2, 2, '!when [userName] [activity]');
 	cmds.add( 'roll', cmdRoll, 1,1, '!roll [n]d[s]');
 
+	cmds.add( 'uid', cmdUid, 1,1, '!uid [username]' );
+	cmds.add( 'uname', cmdUName, 1,1, '!uname [nickname]' );
+	cmds.add( 'nick', cmdNick, 1,1, '!nick [displayName]' );
+	
 	cmds.add( 'lastplay', cmdLastPlay, 2, 2, '!lastplay [userName] [gameName]');
 	cmds.add( 'laston', cmdLastOn, 1, 1, '!laston [userName]');
 	cmds.add( 'lastactive', cmdLastActive, 1, 1, '!lastactive [userName]');
@@ -52,7 +58,7 @@ bot.on( 'ready', function(evt) {
     console.log('Scheduler Connected: ' + bot.username + ' - (' + bot.id + ')');
 });
 
-bot.on( 'message', do_msg );
+bot.on( 'message', doMsg );
 bot.on( 'presenceUpdate', presenceChanged );
 bot.on( 'error', doError );
 
@@ -74,7 +80,7 @@ function onShutdown() {
 }
 
 
-function do_msg( msg ) {
+function doMsg( msg ) {
 
 	if ( msg.author.id == bot.user.id ) {
 		return;
@@ -109,6 +115,30 @@ function doCommand( msg ) {
 
 	if ( error )
 		msg.channel.send( error );
+
+}
+
+function cmdUName( msg, name ) {
+
+	let gMember = tryGetUser( msg.channel, name );
+	if ( !gMember ) return;
+	msg.channel.send( name + ' user name: ' + gMember.user.username )
+
+}
+
+function cmdNick( msg, name ) {
+
+	let gMember = tryGetUser( msg.channel, name );
+	if ( !gMember ) return;
+	msg.channel.send( name + ' nickname: ' + gMember.nickname )
+
+}
+
+function cmdUid( msg, name ) {
+
+	let gMember = tryGetUser( msg.channel, name );
+	if ( !gMember ) return;
+	msg.channel.send( name + ' uid: ' + gMember.user.id )
 
 }
 
@@ -156,11 +186,8 @@ function cmdTest( msg, reply ){
 
 async function sendGameTime( channel, displayName, gameName ) {
 	
-	let gMember = findMember( channel.guild, displayName );
-	if ( gMember == null ) {
-		channel.send( 'User ' + displayName + ' not found.' );
-		return;
-	}
+	let gMember = tryGetUser( channel, displayName );
+	if ( !gMember ) return;
 
 	if ( gMember.presence.game != null && gMember.presence.game.name === gameName ) {
 		channel.send( displayName + ' is playing ' + gameName );
@@ -184,11 +211,9 @@ async function sendGameTime( channel, displayName, gameName ) {
 async function cmdOnTime( msg, name ) {
 
 	let chan = msg.channel;
-	let gMember = findMember( chan.guild, name );
-	if ( gMember == null ) {
-		chan.send( 'User ' + name + ' not found.' );
-		return;
-	}
+	let gMember = tryGetUser( chan, name );
+	if ( !gMember ) return;
+
 	if ( hasStatus(gMember, 'offline') ) {
 		chan.send( name + ' is not online.' );
 		return;
@@ -219,11 +244,9 @@ async function cmdOnTime( msg, name ) {
 async function cmdOffTime( msg, name ) {
 
 	let chan = msg.channel;
-	let gMember = findMember( chan.guild, name );
-	if ( gMember == null ) {
-		chan.send( 'User ' + name + ' not found.' );
-		return;
-	}
+	let gMember = tryGetUser( chan, name );
+	if ( !gMember ) return;
+
 	if ( !hasStatus(gMember, 'offline') ) {
 		chan.send( name + ' is not offline.' );
 		return;
@@ -256,11 +279,8 @@ async function cmdOffTime( msg, name ) {
 // statusName is the status to display in channel.
 async function sendHistory( channel, displayName, statuses, statusName ) {
 
-	let gMember = findMember( channel.guild, displayName );
-	if ( gMember == null ) {
-		channel.send( 'User ' + displayName + ' not found.' );
-		return;
-	}
+	let gMember = tryGetUser( channel, displayName );
+	if ( !gMember ) return;
 
 	if ( hasStatus(gMember, statuses ) ) {
 
@@ -331,7 +351,7 @@ function latestStatus( history, statuses ) {
 // send schedule message to channel, for user with displayName
 async function sendSchedule( channel, displayName, activity ) {
 
-	let gMember = findMember( channel.guild, displayName );
+	let gMember = findMember( channel, displayName );
 	if ( gMember == null ) {
 		channel.send( 'User ' + displayName + ' not found.' );
 		return;
@@ -449,10 +469,38 @@ function logHistory( guildMember, statuses ) {
 
 }
 
+function tryGetUser( channel, name ) {
+
+	let member = findMember( channel, name );
+	if ( member == null ) channel.send( 'User ' + name + ' not found.' );
+	return member;
+
+}
+
 // hasMembers is an object with a members property,
 // such as a Guild or a Channel.
-function findMember( hasMembers, displayName ) {
-	return hasMembers.members.find( 'displayName', displayName );
+function findMember( channel, name ) {
+
+	if ( channel == null ) return null;
+
+	switch ( channel.type ) {
+
+		case 'text':
+		case 'voice':
+
+			let user = channel.guild.members.find( 'displayName', name );
+			return user;
+
+			break;
+		case 'dm':
+			return null;
+			break;
+		case 'group':
+			return channel.nicks.find( val => val === name );
+			break;
+
+	}
+
 }
 
 // merge with existing member data.
@@ -480,8 +528,7 @@ async function mergeMember( guildMember, newData ){
 
 }
 
-// Attempts to read the json member file for a guild member.
-// cb(err,data) on complete. data is null on error.
+// Read the json file for a guild member.
 async function readMemberData( guildMember ) {
 
 	let filePath = getMemberPath( guildMember );
@@ -490,7 +537,6 @@ async function readMemberData( guildMember ) {
 }
 
 // write guildMember data file to guild folder.
-// cb(err) callback.
 async function writeMemberData( guildMember, jsonData ) {
 
 	let filePath = getMemberPath( guildMember );

@@ -18,13 +18,17 @@ exports.Cache = class {
 
 	}
 
-	store( key, value ) {
+	async store( key, value ) {
 
 		this.dict[key] = value;
 		if ( backup ) {
-			backup( key, value );
+			await backup( key, value );
 		}
 
+	}
+
+	free( key ){
+		delete this.dict[key];
 	}
 
 	has( key ) {

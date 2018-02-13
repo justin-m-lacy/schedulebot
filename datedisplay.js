@@ -7,8 +7,8 @@ exports.DateDisplay = class {
 	static elapsed( since ) {
 
 		let dt = Date.now() - since;
-		if ( dt < ms_per_hr ) return ( (dt/ms_per_min) + ' minutes');
-		return ( dt / ms_per_hr) + ' hours';
+		if ( dt < ms_per_hr ) return ( (dt/ms_per_min).toFixed(2) + ' minutes');
+		return ( dt / ms_per_hr).toFixed(2) + ' hours';
 
 	}
 
