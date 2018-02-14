@@ -15,7 +15,6 @@ exports.Cache = class {
 	async get( key ) {
 
 		if ( this.dict.hasOwnProperty(key)){
-			console.log( 'retrieving from cache.');
 			return this.dict[key];
 		}
 		if ( !this.loader ) return null;
@@ -23,7 +22,6 @@ exports.Cache = class {
 		console.log( 'fetching from file.');
 		let val = await this.loader( key );
 		if ( val != null ) {
-			console.log( 'caching loaded value.');
 			this.dict[key] = val;
 		}
 		return val;
@@ -34,7 +32,6 @@ exports.Cache = class {
 
 		this.dict[key] = value;
 		if ( this.saver ) {
-			console.log('writing to backup');
 			await this.saver( key, value );
 		}
 

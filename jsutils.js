@@ -1,3 +1,12 @@
+exports.randElm = (arr)=>{
+	const ind = Math.floor( Math.random()*(arr.length));
+	return arr[ind];
+}
+
+exports.random = (min, max)=>{
+	return Math.floor( Math.random()*(max-min)) + min;
+}
+
 // Performs a recursive merge of variables from src to dest.
 // Variables from src override variables in dest.
 exports.recurMerge = recurMerge;

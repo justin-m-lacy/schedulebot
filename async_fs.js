@@ -1,5 +1,16 @@
 const fs = require( 'fs');
 
+exports.readdir = (path, options=null) => new Promise( (res,rej)=>{
+
+	fs.readdir( path, options, (err,files)=>{
+
+		if ( err )rej(err);
+		res(files);
+
+	});
+
+});
+
 exports.readJSON = path => new Promise( (res,rej)=>{
 
 	fs.readFile( path, (err,data)=>{
@@ -11,6 +22,13 @@ exports.readJSON = path => new Promise( (res,rej)=>{
 	});
 
 });
+
+exports.readJSONSync = path => {
+
+	let data = fs.readFileSync( path );
+	return JSON.parse( data );
+
+};
 
 exports.mkdir = path => new Promise( (res,rej)=> {
 

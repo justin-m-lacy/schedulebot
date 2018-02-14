@@ -1,5 +1,5 @@
 const path = require( 'path');
-const fsj = require( './fjson.js');
+const fsj = require( './async_fs.js');
 
 const BASE_DIR = './savedata/';
 const SERVERS_DIR = 'guilds/';
@@ -11,6 +11,8 @@ const USERS_DIR = 'users/';
 exports.readData = readData;
 exports.writeData = writeData;
 exports.memberPath = getMemberPath;
+exports.pluginDir = getPluginDir;
+exports.getPluginFile = getPluginFile;
 
 
 async function readData( relPath ) {
@@ -29,29 +31,15 @@ async function writeData( relPath, data ) {
 
 }
 
-// Read the json file for a guild member.
-async function readMemberData( member ) {
-
-	let filePath = getMemberPath( member );
-	return await fsj.readJSON( filePath );
+function getPluginFile( plugname, file, guild ) {
+	if ( guild == null ) return path.join( PLUGINS_DIR, plugname, file );
+	return path.join( PLUGINS_DIR, guild.id, plugname, file )
 
 }
 
-// write guildMember data file to guild folder.
-async function writeMemberData( member, jsonData ) {
-
-	let filePath = getMemberPath( member );
-
-	try {
-		await fsj.mkdir( path.dirname(filePath) );
-	} catch ( err ){}
-	await fsj.writeJSON( filePath, jsonData );
-
-}
-
-function getPluginDir( guild ) {
-	if ( guild == null ) return PLUGINS_DIR;
-	return path.join( SERVERS_DIR, PLUGINS_DIR );
+function getPluginDir( plugname, guild ) {
+	if ( guild == null ) return path.join( PLUGINS_DIR, plugname );
+	return path.join( PLUGINS_DIR, guild.id, plugname );
 }
 
 // path to guild storage.
