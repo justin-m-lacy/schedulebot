@@ -4,6 +4,10 @@ auth.json
 
 .vscode
 
-265586734874624000
+savedata
 
-servers
+plugins
+
+node_modules
+
+*.lnk

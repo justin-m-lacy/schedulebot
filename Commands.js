@@ -1,6 +1,7 @@
 
 exports.Dispatch = class CmdDispatch {
 
+	get commands() { return this._cmds; }
 	constructor( cmdPrefix='!') {
 
 		this._cmds = {};
@@ -15,13 +16,17 @@ exports.Dispatch = class CmdDispatch {
 		this.cmdLine.input = input;
 		console.log( 'cmd: ' + this.cmdLine.cmd );
 
-		let cmdInfo = this.getCmd( this.cmdLine.cmd );
+		let cmdInfo = this.getCmd( this.cmdLine.cmd.toLowerCase() );
 
 		if ( cmdInfo ) {
 
 			var args;
-			if ( cmdInfo.group === 'left') args = this.cmdLine.groupLeft( cmdInfo.maxArgs );
-			else args = this.cmdLine.groupRight( cmdInfo.maxArgs );
+			if ( cmdInfo.group === 'right') args = this.cmdLine.groupRight( cmdInfo.maxArgs );
+			else args = this.cmdLine.groupLeft( cmdInfo.maxArgs );
+
+			if ( cmdInfo.minArgs != null && args.length < cmdInfo.minArgs ) {
+				return 'Usage: ' + cmdInfo.usage;
+			}
 
 			if ( leadArgs != null ){
 				args = leadArgs.concat(args);
@@ -71,11 +76,17 @@ class CmdLine {
 		this._input = str;
 
 		let ind = str.indexOf( ' ', this._prefixLen );
+
 		if ( ind >= 0 ) {
 
-			this._cmd = str.slice( this._prefixLen, ind );
+			this._cmd = str.slice( this._prefixLen, ind ).toLowerCase();
 			this._argStr = str.slice(ind);
 	
+		} else {
+
+			this._cmd = str.slice( this._prefixLen ).toLowerCase();
+			this._argStr = '';
+
 		}
 
 	}
@@ -154,7 +165,7 @@ class CmdLine {
 		while( true ) {
 
 			// skip spaces.
-			while ( start <= 0 && str.charAt(start) == ' ' ) start--;
+			while ( start >= 0 && str.charAt(start) == ' ' ) start--;
 			if ( start <= 0 ) break;
 
 			argCount--;

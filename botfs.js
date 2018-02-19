@@ -27,7 +27,7 @@ async function writeData( relPath, data ) {
 	try {
 		await fsj.mkdir( path.dirname( absPath ) );
 	} catch ( err ){}
-	await fsj.writeJSON( filePath, jsonData );
+	await fsj.writeJSON( absPath, data );
 
 }
 

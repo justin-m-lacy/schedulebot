@@ -32,6 +32,7 @@ function initCmds(){
 
 	let cmds = new Cmd.Dispatch( CmdPrefix );
 	
+	cmds.add( 'help', cmdHelp, 0, 1, '!help [command]');
 	cmds.add( 'schedule', cmdSchedule, 2, 2, '!schedule [activity] [times]', 'right');
 	cmds.add( 'sleep', cmdSleep, 1, 1, '!sleep [sleep schedule]');
 	cmds.add( 'when', cmdWhen, 2, 2, '!when [userName] [activity]');
@@ -123,7 +124,7 @@ var cache = initCache();
 var plugins = loadPlugins();
 
 bot.on( 'ready', function(evt) {
-    console.log('Scheduler Connected: ' + bot.username + ' - (' + bot.id + ')');
+    console.log('Scheduler Connected: ' + this.user.username + ' - (' + this.user.id + ')');
 });
 
 bot.on( 'message', doMsg );
@@ -132,26 +133,33 @@ bot.on( 'error', doError );
 
 bot.login( auth.token );
 
-process.on( 'exit', onShutdown );
-process.on( 'SIGINT', onShutdown );
+process.on( 'exit', shutdown );
+process.on( 'SIGINT', forceQuit );
 
-
-function doError( err ) {
-	console.log( 'Connection error: ' + err.message );
-}
-
-function onShutdown() {
+function shutdown() {
 	if ( bot != null ) {
 		bot.destroy();
 		bot = null;
 	}
 }
 
+function doError( err ) {
+	console.log( 'Connection error: ' + err.message );
+}
+
+function forceQuit() {
+	if ( bot != null ) {
+		bot.destroy();
+		bot = null;
+	}
+	process.exit();
+}
+
 
 function doMsg( msg ) {
 
 	if ( msg.author.id == bot.user.id ) return;
-	if ( !msg.hasOwnProperty('guild') || msg.guild == null) return;
+	if ( msg.guild == null) return;
 
 	try {
 
@@ -182,6 +190,16 @@ function doCommand( msg ) {
 
 	if ( error )
 		msg.channel.send( error );
+
+}
+
+function cmdHelp( msg, cmd ) {
+
+	if ( cmd == null ) {
+		printCommands( msg.channel );
+	} else {
+		printCommand( msg.channel, cmd );
+	}
 
 }
 
@@ -264,14 +282,19 @@ async function sendGameTime( channel, displayName, gameName ) {
 	try {
 
 		let data = await fetchMemberData( gMember );
-		let games = data.games;
+		let game = data.games[gameName];
 
-		let dateStr = dformat.DateDisplay.recent( games[gameName] );
-		channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
+		if ( game != null ) {
 
-	} catch ( err ) {
-		channel.send( gameName + ': No record for ' + displayName + ' found.' );
-	}
+			let dateStr = dformat.dateString( game );
+			channel.send( displayName + ' last played ' + gameName + ' ' + dateStr );
+			return;
+
+		}
+
+	} catch ( err ) { console.log(err);}
+
+	channel.send( 'I have not seen ' + displayName + ' playing ' + gameName + '.' );
 
 }
 
@@ -294,7 +317,7 @@ async function cmdOnTime( msg, name ) {
 			let lastTime = latestStatus( history, 'offline' );
 
 			if ( lastTime != null ){
-				chan.send( name + ' has been online for ' + dformat.DateDisplay.elapsed( lastTime ) );
+				chan.send( name + ' has been online for ' + dformat.elapsed( lastTime ) );
 				return;
 			}
 
@@ -327,7 +350,7 @@ async function cmdOffTime( msg, name ) {
 			let lastTime = latestStatus( history, 'offline' );
 
 			if ( lastTime != null ){
-				chan.send( name + ' has been offline for ' + dformat.DateDisplay.elapsed( lastTime ) );
+				chan.send( name + ' has been offline for ' + dformat.elapsed( lastTime ) );
 				return;
 			}
 
@@ -361,12 +384,12 @@ async function sendHistory( channel, name, statuses, statusName ) {
 		let memData = await fetchMemberData( gMember );
 		let lastTime = latestStatus( memData.history, statuses );
 
-		let dateStr = dformat.DateDisplay.recent( lastTime );
+		let dateStr = dformat.recent( lastTime );
 		if ( statusName == null ) statusName = evtType;
 		channel.send( 'Last saw ' + name + ' ' + statusName + ' ' + dateStr );
 
 	} catch ( err ) {
-		channel.send( 'I haven\t seen ' + name + ' ' + statusName );
+		channel.send( 'I haven\'t seen ' + name + ' ' + statusName );
 	}
 
 }
@@ -498,9 +521,8 @@ function presenceChanged( oldMember, newMember ) {
 
 	if ( oldGameName != newGameName ){
 
-		if ( oldGame != null ) {
-			logGame( oldMember, oldGame );
-		}
+		logGames( oldMember, oldGame, newGame );
+
 		if ( newGame != null ) {
 			console.log( newMember.displayName + ' game changed: ' + newGame.name );
 		}
@@ -509,16 +531,20 @@ function presenceChanged( oldMember, newMember ) {
 
 }
 
-function logGame( guildMember, game ) {
+function logGames( guildMember, prevGame, curGame ) {
 
-	let gameName = game.name;
-	let newData = { games:{
-			[game.name]:Date.now()
-		}
-	};
-	mergeMember( guildMember, newData );
+	let now = Date.now();
+	var gameData = {};
+
+	if ( prevGame ) { gameData[prevGame.name] = now;
+	}
+	if ( curGame ){ gameData[curGame.name] = now;
+	}
+	
+	mergeMember( guildMember, {games:gameData} );
 
 }
+
 
 // Log a guild member's last status within the guild.
 function logHistory( guildMember, statuses ) {
@@ -603,5 +629,38 @@ async function storeMemberData( gMember, data ) {
 
 	let memPath = fsys.memberPath( gMember );
 	await cache.store( memPath, data );
+
+}
+
+function printCommand( chan, cmdname ) {
+
+	let cmds = dispatch.commands;
+	if ( cmds != null && cmds.hasOwnProperty( cmdname ) ) {
+
+		let cmdInfo = cmds[cmdname];
+		let desc = cmdname + ' usage: ' + cmdInfo.usage;
+		chan.send( desc );
+
+	} else {
+		chan.send( 'Command not found.');
+	}
+
+}
+
+function printCommands( chan ) {
+
+	let str = 'Use help [cmd] for more information.\nAvailable commands:\n';
+	let cmds = dispatch.commands;
+	if ( cmds != null ) {
+
+		let a = [];
+		for( let k in cmds ){
+			a.push(k);
+		}
+
+		str += a.join(', ');
+
+	}
+	chan.send( str );
 
 }
