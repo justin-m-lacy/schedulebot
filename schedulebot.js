@@ -24,8 +24,14 @@ function initCache() {
 function initReactions() {
 
 	let React = require( './reactions.js');
-	let reactData = require('./reactions.json');
-	return new React.Reactions( reactData );
+	try {
+
+		let reactData = require('./reactions.json');
+		return new React.Reactions( reactData );
+
+	} catch (e){}
+
+	return new React.Reactions(null);
 }
 
 function initCmds(){ 

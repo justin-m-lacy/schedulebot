@@ -14,6 +14,8 @@ exports.Reactions = class Reactions {
 
 	react( message ) {
 
+		if ( this.reactions == null ) return;
+
 		let now = Date.now()/1000;
 		if ( now - this.gTime < this.gWait ) return null;
 		this.gTime = now;
