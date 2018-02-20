@@ -58,59 +58,8 @@ function initCmds(){
 
 function loadPlugins() {
 
-	let plugins = {};
-
-	try {
-
-	dirs = fs.readdirSync( PLUGINS_DIR );
-	let file, dir, stats;
-	for( let dir of dirs ) {
-
-		dir = path.resolve( PLUGINS_DIR, dir );
-		stats = fs.statSync( dir );
-		if ( !stats.isDirectory() ) continue;
-		let files = fs.readdirSync( dir );
-		for( let file of files ) {
-
-			if ( !(path.extname(file) === '.json')) continue;
-			file = path.resolve( dir, file );
-			stats = fs.statSync( file );
-			if ( !stats.isFile() ) continue;
-			// desc file.
-			loadPlugin( dir, file, plugins);
-
-		}
-
-	}
-} catch (err){
-	console.log(err);
-}
-
-	return plugins;
-
-}
-
-// load plugin described by json.
-function loadPlugin( dir, descPath, plugins ){
-
-	try {
-
-		console.log( 'loading: ' + descPath );
-
-		let data = fs.readFileSync( descPath );
-		let desc = JSON.parse(data);
-
-		if ( desc.hasOwnProperty( 'plugin')){
-
-			let plugFile = path.join( dir, desc.plugin );
-			let plugName = desc.hasOwnProperty('name') ? desc.name : plugFile;
-			let plugin = plugins[plugName] = require( plugFile );
-
-		}
-
-	} catch ( err ){
-		console.log( err );
-	}
+	const plugs = require( './plugsupport.js');
+	return plugs.loadPlugins( PLUGINS_DIR );
 
 }
 
